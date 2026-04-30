@@ -88,7 +88,7 @@ Output a JSON object with:
 
 export interface ScriptSegment {
   text: string;
-  annotationType: 'highlight' | 'circle' | 'pointer' | 'none';
+  annotationType: 'highlight' | 'circle' | 'pointer' | 'underline' | 'none';
   box_2d: [number, number, number, number];
 }
 
@@ -146,7 +146,7 @@ CRITICAL INSTRUCTIONS:
     systemInstruction += `
 - VISUAL ANNOTATIONS: Break your explanation into small logical segments. For each segment, output it in the 'segments' array.
 - If you are referring to a specific visual element on the slide in that segment, provide its bounding box in 'box_2d' as [ymin, xmin, ymax, xmax] scaled from 0 to 1000. For example, [100, 200, 300, 400] means ymin 10%, xmin 20%, ymax 30%, xmax 40%.
-- Set 'annotationType' to 'highlight', 'circle', or 'pointer'. If not referring to any specific element, set it to 'none' and box_2d to [0,0,0,0].
+- Set 'annotationType' to 'highlight', 'circle', 'pointer', or 'underline'. If you want to put a line under the words, use 'underline'. If not referring to any specific element, set it to 'none' and box_2d to [0,0,0,0].
 `;
   }
 
@@ -168,7 +168,7 @@ CRITICAL INSTRUCTIONS:
         type: Type.OBJECT,
         properties: {
           text: { type: Type.STRING, description: "The spoken script for this segment." },
-          annotationType: { type: Type.STRING, description: "One of: highlight, circle, pointer, none" },
+          annotationType: { type: Type.STRING, description: "One of: highlight, circle, pointer, underline, none" },
           box_2d: { 
             type: Type.ARRAY, 
             items: { type: Type.NUMBER },

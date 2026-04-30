@@ -5,6 +5,7 @@ import { extractImagesFromPdf } from '@/lib/pdf-utils';
 import { determinePersonas, generateSlideScript, generateSpeech, PersonasResult, ScriptSegment } from '@/lib/ai-service';
 import { pcmBase64ToWavUrl, mergePcmBase64ToWavUrl } from '@/lib/audio-utils';
 import { UploadCloud, Play, Settings2, FileText, CheckCircle2, Loader2, BookOpen } from 'lucide-react';
+import { motion } from 'motion/react';
 
 type SlideState = 'PENDING' | 'GENERATING_SCRIPT' | 'GENERATING_AUDIO' | 'DONE' | 'ERROR';
 
@@ -458,27 +459,73 @@ function AnnotationBox({ annotation }: { annotation: any }) {
   const height = `${(box[2] - box[0]) / 10}%`;
   const width = `${(box[3] - box[1]) / 10}%`;
 
-  let styleClass = '';
-  if (annotation.annotationType === 'highlight') {
-    styleClass = 'bg-yellow-400/20 border-2 border-yellow-400 rounded-sm shadow-[0_0_15px_rgba(250,204,21,0.5)] backdrop-brightness-110';
-  } else if (annotation.annotationType === 'circle') {
-    styleClass = 'border-[3px] border-red-500 rounded-[100%] shadow-[0_0_15px_rgba(239,68,68,0.5)]';
-  } else if (annotation.annotationType === 'pointer') {
-    styleClass = 'border-2 border-blue-500 bg-blue-500/10 shadow-[0_0_15px_rgba(59,130,246,0.5)]';
-  } else {
+  const type = annotation.annotationType;
+  if (type === 'none') {
     return null;
   }
 
   return (
     <div 
-      className={`absolute z-10 pointer-events-none transition-all duration-300 ease-in-out ${styleClass}`}
+      className="absolute z-10 pointer-events-none"
       style={{ top, left, width, height }}
     >
-      {annotation.annotationType === 'pointer' && (
-        <div className="absolute -top-3 -right-3 w-4 h-4 bg-blue-500 rounded-full animate-ping"></div>
+      {type === 'highlight' && (
+        <motion.div 
+          initial={{ scaleX: 0 }}
+          animate={{ scaleX: 1 }}
+          transition={{ duration: 0.4, ease: "easeOut" }}
+          style={{ originX: 0 }}
+          className="w-full h-full bg-yellow-400/30 border-y-2 border-yellow-400 rounded-sm shadow-[0_0_15px_rgba(250,204,21,0.5)] backdrop-brightness-110"
+        />
       )}
-      {annotation.annotationType === 'pointer' && (
-        <div className="absolute -top-3 -right-3 w-4 h-4 bg-blue-600 rounded-full border-2 border-[#0A0C10]"></div>
+      
+      {type === 'underline' && (
+        <div className="w-full h-full flex items-end">
+          <motion.div 
+            initial={{ scaleX: 0 }}
+            animate={{ scaleX: 1 }}
+            transition={{ duration: 0.4, ease: "easeOut" }}
+            style={{ originX: 0 }}
+            className="w-full h-[4px] bg-red-500 shadow-[0_4px_10px_rgba(239,68,68,0.8)] rounded-full"
+          />
+        </div>
+      )}
+
+      {type === 'circle' && (
+        <motion.svg 
+          className="w-full h-full overflow-visible"
+          initial="hidden"
+          animate="visible"
+        >
+          <motion.rect
+            x="0" y="0" width="100%" height="100%"
+            fill="none"
+            stroke="#ef4444"
+            strokeWidth="4"
+            rx="20"
+            variants={{
+              hidden: { pathLength: 0, opacity: 0 },
+              visible: { 
+                 pathLength: 1, 
+                 opacity: 1, 
+                 transition: { duration: 0.6, ease: "easeInOut" } 
+              }
+            }}
+            className="drop-shadow-[0_0_8px_rgba(239,68,68,0.8)]"
+          />
+        </motion.svg>
+      )}
+
+      {type === 'pointer' && (
+        <motion.div 
+          initial={{ scale: 0, y: -20, opacity: 0 }}
+          animate={{ scale: 1, y: 0, opacity: 1 }}
+          transition={{ type: "spring", bounce: 0.6 }}
+          className="absolute -top-4 -right-4 w-8 h-8 bg-blue-600 rounded-full border-2 border-white shadow-[0_0_20px_rgba(59,130,246,0.9)] flex items-center justify-center pointer-events-auto"
+        >
+           <div className="absolute inset-0 bg-blue-400 rounded-full animate-ping opacity-60"></div>
+           <div className="w-3 h-3 bg-white rounded-full"></div>
+        </motion.div>
       )}
     </div>
   );
