@@ -482,33 +482,20 @@ function AnnotationBox({ annotation }: { annotation: any }) {
         )}
         
         {type === 'underline' && (
-          <svg className="absolute -bottom-1 md:-bottom-2 lg:-bottom-3 inset-x-0 w-full h-[15px] overflow-visible" preserveAspectRatio="none" viewBox="0 0 100 15">
-            <defs>
-              <filter id="glow-underline" x="-20%" y="-20%" width="140%" height="140%">
-                <feGaussianBlur stdDeviation="1" result="blur" />
-                <feComposite in="SourceGraphic" in2="blur" operator="over" />
-              </filter>
-            </defs>
-            <motion.path 
-              d="M -2,10 Q 25,2 50,8 T 102,6"
-              initial={{ pathLength: 0, opacity: 0 }}
-              animate={{ pathLength: 1, opacity: 1 }}
-              exit={{ opacity: 0, transition: { duration: 0.2 } }}
-              transition={{ duration: 0.4, ease: "easeOut" }}
-              fill="none"
-              stroke="#ef4444"
-              strokeWidth="4"
-              strokeLinecap="round"
-              filter="url(#glow-underline)"
-              className="drop-shadow-sm"
-              vectorEffect="non-scaling-stroke"
-            />
-          </svg>
+          <div className="absolute -bottom-1 left-0 right-0 h-[4px] overflow-hidden">
+             <motion.div
+               initial={{ x: "-100%" }}
+               animate={{ x: "0%" }}
+               exit={{ opacity: 0, transition: { duration: 0.2 } }}
+               transition={{ duration: 0.4, ease: "easeOut" }}
+               className="w-full h-full bg-red-500 rounded-full shadow-[0_2px_8px_rgba(239,68,68,0.8)]"
+             />
+          </div>
         )}
 
         {type === 'circle' && (
           <svg 
-            className="absolute -inset-2 md:-inset-4 w-[calc(100%+16px)] h-[calc(100%+16px)] md:w-[calc(100%+32px)] md:h-[calc(100%+32px)] overflow-visible"
+            className="absolute -inset-2 md:-inset-3 w-[calc(100%+16px)] h-[calc(100%+16px)] md:w-[calc(100%+24px)] md:h-[calc(100%+24px)] overflow-visible"
             preserveAspectRatio="none"
             viewBox="0 0 100 100"
           >
@@ -518,15 +505,15 @@ function AnnotationBox({ annotation }: { annotation: any }) {
                 <feComposite in="SourceGraphic" in2="blur" operator="over" />
               </filter>
             </defs>
-            <motion.path
-              d="M 50,5 C 20,5 5,20 5,50 C 5,80 20,95 50,95 C 80,95 95,80 95,50 C 95,20 80,5 50,5 C 40,5 30,10 25,18"
+            <motion.rect
+              x="2" y="2" width="96" height="96" rx="16"
               initial={{ pathLength: 0, opacity: 0 }}
               animate={{ pathLength: 1, opacity: 1 }}
               exit={{ opacity: 0, transition: { duration: 0.2 } }}
               transition={{ duration: 0.5, ease: "easeOut" }}
               fill="none"
               stroke="#ef4444"
-              strokeWidth="3.5"
+              strokeWidth="4"
               strokeLinecap="round"
               filter="url(#glow-circle)"
               vectorEffect="non-scaling-stroke"
@@ -534,27 +521,20 @@ function AnnotationBox({ annotation }: { annotation: any }) {
           </svg>
         )}
 
-        {type === 'pointer' && (
+        {type === 'arrow' && (
           <motion.div 
             initial={{ scale: 0, y: 30, x: 30, opacity: 0 }}
             animate={{ scale: 1, y: 0, x: 0, opacity: 1 }}
             exit={{ scale: 0, opacity: 0, transition: { duration: 0.2 } }}
             transition={{ type: "spring", stiffness: 200, damping: 15 }}
-            className="absolute bottom-0 right-0 translate-x-[20%] translate-y-[20%] pointer-events-auto"
+            className="absolute bottom-[-10px] right-[-10px] pointer-events-auto origin-top-left"
           >
             <div className="relative">
-               {/* Pulse effect */}
-               <motion.div 
-                  initial={{ scale: 0.5, opacity: 0 }}
-                  animate={{ scale: 2.5, opacity: 0 }}
-                  transition={{ repeat: Infinity, duration: 1.5, ease: "easeOut", delay: 0.5 }}
-                  className="absolute -top-3 -left-3 w-6 h-6 rounded-full bg-blue-500"
-               />
-               
-               {/* Pointer icon */}
-               <div className="bg-blue-600 p-2 rounded-full border-2 border-white shadow-[0_4px_12px_rgba(37,99,235,0.6)] text-white relative z-10 transform -rotate-12">
-                 <MousePointer2 size={20} className="fill-white/20" />
-               </div>
+               {/* Arrow SVG pointing to the top-left (the element) */}
+               <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" className="drop-shadow-[0_0_8px_rgba(239,68,68,0.8)] z-10 relative">
+                 <line x1="22" y1="22" x2="2" y2="2"></line>
+                 <polyline points="11 2 2 2 2 11"></polyline>
+               </svg>
             </div>
           </motion.div>
         )}

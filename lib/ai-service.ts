@@ -88,7 +88,7 @@ Output a JSON object with:
 
 export interface ScriptSegment {
   text: string;
-  annotationType: 'highlight' | 'circle' | 'pointer' | 'underline' | 'none';
+  annotationType: 'highlight' | 'circle' | 'arrow' | 'underline' | 'none';
   box_2d: [number, number, number, number];
 }
 
@@ -146,11 +146,12 @@ CRITICAL INSTRUCTIONS:
     systemInstruction += `
 - VISUAL ANNOTATIONS: Break your explanation into small logical segments. For each segment, output it in the 'segments' array.
 - If you are referring to a visual element on the slide, provide its bounding box in 'box_2d' as [ymin, xmin, ymax, xmax] scaled 0 to 1000. For example, [100, 200, 300, 400] means ymin 10%, xmin 20%, ymax 30%, xmax 40%.
+- CRITICAL ACCURACY: The 'box_2d' coordinates MUST tightly wrap the exact element, text, or figure you are referring to. Do not draw boxes too large. Pay careful attention to the visual spacing.
 - Choose 'annotationType' carefully based on what you are doing in that segment:
    * 'highlight': Use for blocks of text or important paragraphs to draw attention to the background.
    * 'underline': Use for specific key phrases, important terms, or titles to underline them.
-   * 'circle': Use for diagrams, numbers, or specific disconnected elements that need circling.
-   * 'pointer': Use to point at a specific area, image, or part of a chart.
+   * 'circle': Use for diagrams, numbers, or specific disconnected elements that need a clean enclosed circle.
+   * 'arrow': Use to draw a pointing arrow towards a specific visual element, logo, or part of a chart.
    * 'none': Use when just talking generally and not referring to anything visual on the slide. Set box_2d to [0,0,0,0].
 `;
   }
@@ -173,7 +174,7 @@ CRITICAL INSTRUCTIONS:
         type: Type.OBJECT,
         properties: {
           text: { type: Type.STRING, description: "The spoken script for this segment." },
-          annotationType: { type: Type.STRING, description: "One of: highlight, circle, pointer, underline, none" },
+          annotationType: { type: Type.STRING, description: "One of: highlight, circle, arrow, underline, none" },
           box_2d: { 
             type: Type.ARRAY, 
             items: { type: Type.NUMBER },
@@ -203,7 +204,42 @@ CRITICAL INSTRUCTIONS:
     });
 
     const jsonStr = response.text?.trim() || '{}';
-    return JSON.parse(jsonStr) as SlideScriptResult;
+    const initialResult = JSON.parse(jsonStr) as SlideScriptResult;
+
+    // Refinement step for annotations
+    if (enableAnnotations && initialResult.segments && initialResult.segments.length > 0) {
+       const refinementPrompt = `Here is the slide image and the initial script/annotations generated:
+
+${JSON.stringify(initialResult, null, 2)}
+
+Please review EVERY segment that has an annotation. Your goal is to drastically improve accuracy:
+1. Verify the 'annotationType' (arrow, highlight, underline, circle) is the absolute best fit.
+2. CRITICAL: Adjust the 'box_2d' coordinates [ymin, xmin, ymax, xmax] so they PERFECTLY AND TIGHTLY bound the referenced text/diagram/icon. If a box is currently too loose, shrink it. If it points to the wrong area, fix it.
+3. If 'none' is selected but a visual reference is clearly being made, add the correct bounding box.
+
+Return the exact same JSON structure, but with the refined and highly accurate 'box_2d' and 'annotationType' values.`;
+
+       const refinementResponse = await ai.models.generateContent({
+         model: "gemini-3.1-pro-preview",
+         contents: {
+           parts: [
+             { inlineData: { mimeType: "image/jpeg", data: imageBase64 } },
+             { text: refinementPrompt }
+           ]
+         },
+         config: {
+           systemInstruction: "You are an expert visual QA agent. Your job is to correct spatial bounding boxes ([ymin, xmin, ymax, xmax] scaled 0-1000) so they are pixel-perfect.",
+           temperature: 0.1, // Low temperature for precision
+           responseMimeType: "application/json",
+           responseSchema: responseSchema
+         }
+       });
+
+       const refinedJsonStr = refinementResponse.text?.trim() || '{}';
+       return JSON.parse(refinedJsonStr) as SlideScriptResult;
+    }
+
+    return initialResult;
   } catch (error) {
     console.error("Error generating script:", error);
     throw new Error('Failed to generate script for slide');
