@@ -145,8 +145,13 @@ CRITICAL INSTRUCTIONS:
   if (enableAnnotations) {
     systemInstruction += `
 - VISUAL ANNOTATIONS: Break your explanation into small logical segments. For each segment, output it in the 'segments' array.
-- If you are referring to a specific visual element on the slide in that segment, provide its bounding box in 'box_2d' as [ymin, xmin, ymax, xmax] scaled from 0 to 1000. For example, [100, 200, 300, 400] means ymin 10%, xmin 20%, ymax 30%, xmax 40%.
-- Set 'annotationType' to 'highlight', 'circle', 'pointer', or 'underline'. If you want to put a line under the words, use 'underline'. If not referring to any specific element, set it to 'none' and box_2d to [0,0,0,0].
+- If you are referring to a visual element on the slide, provide its bounding box in 'box_2d' as [ymin, xmin, ymax, xmax] scaled 0 to 1000. For example, [100, 200, 300, 400] means ymin 10%, xmin 20%, ymax 30%, xmax 40%.
+- Choose 'annotationType' carefully based on what you are doing in that segment:
+   * 'highlight': Use for blocks of text or important paragraphs to draw attention to the background.
+   * 'underline': Use for specific key phrases, important terms, or titles to underline them.
+   * 'circle': Use for diagrams, numbers, or specific disconnected elements that need circling.
+   * 'pointer': Use to point at a specific area, image, or part of a chart.
+   * 'none': Use when just talking generally and not referring to anything visual on the slide. Set box_2d to [0,0,0,0].
 `;
   }
 

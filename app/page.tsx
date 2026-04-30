@@ -4,8 +4,8 @@ import { useState, useRef, useEffect } from 'react';
 import { extractImagesFromPdf } from '@/lib/pdf-utils';
 import { determinePersonas, generateSlideScript, generateSpeech, PersonasResult, ScriptSegment } from '@/lib/ai-service';
 import { pcmBase64ToWavUrl, mergePcmBase64ToWavUrl } from '@/lib/audio-utils';
-import { UploadCloud, Play, Settings2, FileText, CheckCircle2, Loader2, BookOpen } from 'lucide-react';
-import { motion } from 'motion/react';
+import { UploadCloud, Play, Settings2, FileText, CheckCircle2, Loader2, BookOpen, MousePointer2 } from 'lucide-react';
+import { motion, AnimatePresence } from 'motion/react';
 
 type SlideState = 'PENDING' | 'GENERATING_SCRIPT' | 'GENERATING_AUDIO' | 'DONE' | 'ERROR';
 
@@ -469,64 +469,96 @@ function AnnotationBox({ annotation }: { annotation: any }) {
       className="absolute z-10 pointer-events-none"
       style={{ top, left, width, height }}
     >
-      {type === 'highlight' && (
-        <motion.div 
-          initial={{ scaleX: 0 }}
-          animate={{ scaleX: 1 }}
-          transition={{ duration: 0.4, ease: "easeOut" }}
-          style={{ originX: 0 }}
-          className="w-full h-full bg-yellow-400/30 border-y-2 border-yellow-400 rounded-sm shadow-[0_0_15px_rgba(250,204,21,0.5)] backdrop-brightness-110"
-        />
-      )}
-      
-      {type === 'underline' && (
-        <div className="w-full h-full flex items-end">
+      <AnimatePresence mode="popLayout">
+        {type === 'highlight' && (
           <motion.div 
-            initial={{ scaleX: 0 }}
-            animate={{ scaleX: 1 }}
-            transition={{ duration: 0.4, ease: "easeOut" }}
+            initial={{ scaleX: 0, opacity: 0 }}
+            animate={{ scaleX: 1, opacity: 1 }}
+            exit={{ opacity: 0, transition: { duration: 0.2 } }}
+            transition={{ duration: 0.4, ease: "easeOut", type: "spring", bounce: 0 }}
             style={{ originX: 0 }}
-            className="w-full h-[4px] bg-red-500 shadow-[0_4px_10px_rgba(239,68,68,0.8)] rounded-full"
+            className="absolute -inset-1.5 md:-inset-2.5 z-[-1] bg-[rgba(250,210,0,0.4)] mix-blend-multiply rounded-md shadow-sm"
           />
-        </div>
-      )}
+        )}
+        
+        {type === 'underline' && (
+          <svg className="absolute -bottom-1 md:-bottom-2 lg:-bottom-3 inset-x-0 w-full h-[15px] overflow-visible" preserveAspectRatio="none" viewBox="0 0 100 15">
+            <defs>
+              <filter id="glow-underline" x="-20%" y="-20%" width="140%" height="140%">
+                <feGaussianBlur stdDeviation="1" result="blur" />
+                <feComposite in="SourceGraphic" in2="blur" operator="over" />
+              </filter>
+            </defs>
+            <motion.path 
+              d="M -2,10 Q 25,2 50,8 T 102,6"
+              initial={{ pathLength: 0, opacity: 0 }}
+              animate={{ pathLength: 1, opacity: 1 }}
+              exit={{ opacity: 0, transition: { duration: 0.2 } }}
+              transition={{ duration: 0.4, ease: "easeOut" }}
+              fill="none"
+              stroke="#ef4444"
+              strokeWidth="4"
+              strokeLinecap="round"
+              filter="url(#glow-underline)"
+              className="drop-shadow-sm"
+              vectorEffect="non-scaling-stroke"
+            />
+          </svg>
+        )}
 
-      {type === 'circle' && (
-        <motion.svg 
-          className="w-full h-full overflow-visible"
-          initial="hidden"
-          animate="visible"
-        >
-          <motion.rect
-            x="0" y="0" width="100%" height="100%"
-            fill="none"
-            stroke="#ef4444"
-            strokeWidth="4"
-            rx="20"
-            variants={{
-              hidden: { pathLength: 0, opacity: 0 },
-              visible: { 
-                 pathLength: 1, 
-                 opacity: 1, 
-                 transition: { duration: 0.6, ease: "easeInOut" } 
-              }
-            }}
-            className="drop-shadow-[0_0_8px_rgba(239,68,68,0.8)]"
-          />
-        </motion.svg>
-      )}
+        {type === 'circle' && (
+          <svg 
+            className="absolute -inset-2 md:-inset-4 w-[calc(100%+16px)] h-[calc(100%+16px)] md:w-[calc(100%+32px)] md:h-[calc(100%+32px)] overflow-visible"
+            preserveAspectRatio="none"
+            viewBox="0 0 100 100"
+          >
+            <defs>
+              <filter id="glow-circle" x="-20%" y="-20%" width="140%" height="140%">
+                <feGaussianBlur stdDeviation="1.5" result="blur" />
+                <feComposite in="SourceGraphic" in2="blur" operator="over" />
+              </filter>
+            </defs>
+            <motion.path
+              d="M 50,5 C 20,5 5,20 5,50 C 5,80 20,95 50,95 C 80,95 95,80 95,50 C 95,20 80,5 50,5 C 40,5 30,10 25,18"
+              initial={{ pathLength: 0, opacity: 0 }}
+              animate={{ pathLength: 1, opacity: 1 }}
+              exit={{ opacity: 0, transition: { duration: 0.2 } }}
+              transition={{ duration: 0.5, ease: "easeOut" }}
+              fill="none"
+              stroke="#ef4444"
+              strokeWidth="3.5"
+              strokeLinecap="round"
+              filter="url(#glow-circle)"
+              vectorEffect="non-scaling-stroke"
+            />
+          </svg>
+        )}
 
-      {type === 'pointer' && (
-        <motion.div 
-          initial={{ scale: 0, y: -20, opacity: 0 }}
-          animate={{ scale: 1, y: 0, opacity: 1 }}
-          transition={{ type: "spring", bounce: 0.6 }}
-          className="absolute -top-4 -right-4 w-8 h-8 bg-blue-600 rounded-full border-2 border-white shadow-[0_0_20px_rgba(59,130,246,0.9)] flex items-center justify-center pointer-events-auto"
-        >
-           <div className="absolute inset-0 bg-blue-400 rounded-full animate-ping opacity-60"></div>
-           <div className="w-3 h-3 bg-white rounded-full"></div>
-        </motion.div>
-      )}
+        {type === 'pointer' && (
+          <motion.div 
+            initial={{ scale: 0, y: 30, x: 30, opacity: 0 }}
+            animate={{ scale: 1, y: 0, x: 0, opacity: 1 }}
+            exit={{ scale: 0, opacity: 0, transition: { duration: 0.2 } }}
+            transition={{ type: "spring", stiffness: 200, damping: 15 }}
+            className="absolute bottom-0 right-0 translate-x-[20%] translate-y-[20%] pointer-events-auto"
+          >
+            <div className="relative">
+               {/* Pulse effect */}
+               <motion.div 
+                  initial={{ scale: 0.5, opacity: 0 }}
+                  animate={{ scale: 2.5, opacity: 0 }}
+                  transition={{ repeat: Infinity, duration: 1.5, ease: "easeOut", delay: 0.5 }}
+                  className="absolute -top-3 -left-3 w-6 h-6 rounded-full bg-blue-500"
+               />
+               
+               {/* Pointer icon */}
+               <div className="bg-blue-600 p-2 rounded-full border-2 border-white shadow-[0_4px_12px_rgba(37,99,235,0.6)] text-white relative z-10 transform -rotate-12">
+                 <MousePointer2 size={20} className="fill-white/20" />
+               </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
