@@ -86,9 +86,16 @@ Output a JSON object with:
   }
 }
 
+export interface ScriptSegment {
+  text: string;
+  annotationType: 'highlight' | 'circle' | 'pointer' | 'none';
+  box_2d: [number, number, number, number];
+}
+
 export interface SlideScriptResult {
   script: string;
   summaryForNextSlide: string;
+  segments?: ScriptSegment[];
 }
 
 /**
@@ -100,7 +107,8 @@ export async function generateSlideScript(
   slideIndex: number,
   totalSlides: number,
   previousSummaries: string[],
-  userInstructions?: string
+  userInstructions?: string,
+  enableAnnotations: boolean = false
 ): Promise<SlideScriptResult> {
   const ai = getAI();
 
@@ -134,7 +142,43 @@ CRITICAL INSTRUCTIONS:
 - In addition to the script, provide a brief summary of what you just explained. This summary will be passed to you when generating the next slide's script to maintain context.
 `;
 
+  if (enableAnnotations) {
+    systemInstruction += `
+- VISUAL ANNOTATIONS: Break your explanation into small logical segments. For each segment, output it in the 'segments' array.
+- If you are referring to a specific visual element on the slide in that segment, provide its bounding box in 'box_2d' as [ymin, xmin, ymax, xmax] scaled from 0 to 1000. For example, [100, 200, 300, 400] means ymin 10%, xmin 20%, ymax 30%, xmax 40%.
+- Set 'annotationType' to 'highlight', 'circle', or 'pointer'. If not referring to any specific element, set it to 'none' and box_2d to [0,0,0,0].
+`;
+  }
+
   const prompt = `Here is the current slide/page. Please write the script for what you will say to explain it in Egyptian Arabic, and provide a summary for the next slide.`;
+
+  let responseSchema: any = {
+    type: Type.OBJECT,
+    properties: {
+      script: { type: Type.STRING, description: "The full combined spoken script in Egyptian Arabic." },
+      summaryForNextSlide: { type: Type.STRING, description: "A brief summary to be passed as context to the next slide" }
+    },
+    required: ["script", "summaryForNextSlide"]
+  };
+
+  if (enableAnnotations) {
+    responseSchema.properties.segments = {
+      type: Type.ARRAY,
+      items: {
+        type: Type.OBJECT,
+        properties: {
+          text: { type: Type.STRING, description: "The spoken script for this segment." },
+          annotationType: { type: Type.STRING, description: "One of: highlight, circle, pointer, none" },
+          box_2d: { 
+            type: Type.ARRAY, 
+            items: { type: Type.NUMBER },
+            description: "[ymin, xmin, ymax, xmax] 0-1000 scaled"
+          }
+        },
+        required: ["text", "annotationType", "box_2d"]
+      }
+    };
+  }
 
   try {
     const response = await ai.models.generateContent({
@@ -149,14 +193,7 @@ CRITICAL INSTRUCTIONS:
         systemInstruction,
         temperature: 0.7,
         responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            script: { type: Type.STRING, description: "The spoken script in Egyptian Arabic." },
-            summaryForNextSlide: { type: Type.STRING, description: "A brief summary to be passed as context to the next slide" }
-          },
-          required: ["script", "summaryForNextSlide"]
-        }
+        responseSchema: responseSchema
       }
     });
 

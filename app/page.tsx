@@ -2,11 +2,16 @@
 
 import { useState, useRef, useEffect } from 'react';
 import { extractImagesFromPdf } from '@/lib/pdf-utils';
-import { determinePersonas, generateSlideScript, generateSpeech, PersonasResult } from '@/lib/ai-service';
+import { determinePersonas, generateSlideScript, generateSpeech, PersonasResult, ScriptSegment } from '@/lib/ai-service';
 import { pcmBase64ToWavUrl, mergePcmBase64ToWavUrl } from '@/lib/audio-utils';
 import { UploadCloud, Play, Settings2, FileText, CheckCircle2, Loader2, BookOpen } from 'lucide-react';
 
 type SlideState = 'PENDING' | 'GENERATING_SCRIPT' | 'GENERATING_AUDIO' | 'DONE' | 'ERROR';
+
+interface SegmentTiming extends ScriptSegment {
+  startTime: number;
+  endTime: number;
+}
 
 interface SlideResult {
   id: number;
@@ -14,6 +19,7 @@ interface SlideResult {
   state: SlideState;
   script?: string;
   audioUrl?: string;
+  timings?: SegmentTiming[];
   error?: string;
 }
 
@@ -26,6 +32,13 @@ export default function Home() {
   const [activeSlideId, setActiveSlideId] = useState<number | null>(null);
   const [fullLectureAudioUrl, setFullLectureAudioUrl] = useState<string | null>(null);
   const [additionalInstructions, setAdditionalInstructions] = useState<string>('');
+  const [enableAnnotations, setEnableAnnotations] = useState<boolean>(false);
+  
+  const [audioTime, setAudioTime] = useState<number>(0);
+
+  useEffect(() => {
+    setAudioTime(0);
+  }, [activeSlideId]);
 
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -66,7 +79,7 @@ export default function Home() {
     setFullLectureAudioUrl(null);
 
     let previousSummaries: string[] = [];
-    const generatedAudioBase64s: string[] = new Array(slides.length).fill('');
+    const generatedAudioBase64s: string[][] = new Array(slides.length).fill([]);
     const audioPromises: Promise<void>[] = [];
 
     // Process scripts sequentially to maintain context
@@ -77,17 +90,43 @@ export default function Home() {
 
         // Script generation
         setSlides(prev => prev.map(s => s.id === slide.id ? { ...s, state: 'GENERATING_SCRIPT' } : s));
-        const scriptRes = await generateSlideScript(slide.imgBase64, personas, i, slides.length, previousSummaries, additionalInstructions);
+        const scriptRes = await generateSlideScript(slide.imgBase64, personas, i, slides.length, previousSummaries, additionalInstructions, enableAnnotations);
         previousSummaries.push(scriptRes.summaryForNextSlide);
         setSlides(prev => prev.map(s => s.id === slide.id ? { ...s, script: scriptRes.script, state: 'GENERATING_AUDIO' } : s));
 
-        // Audio generation (run concurrently)
+        // Audio generation (run concurrently over chunks if available)
         const audioPromise = (async () => {
            try {
-              const audioBase64 = await generateSpeech(scriptRes.script, personas.speakerVoiceName);
-              generatedAudioBase64s[i] = audioBase64;
-              const audioUrl = pcmBase64ToWavUrl(audioBase64);
-              setSlides(prev => prev.map(s => s.id === slide.id ? { ...s, state: 'DONE', audioUrl } : s));
+              let finalAudioUrl = '';
+              let timings: SegmentTiming[] = [];
+              let slideAudioBase64s: string[] = [];
+
+              if (enableAnnotations && scriptRes.segments && scriptRes.segments.length > 0) {
+                 let currentMs = 0;
+                 for (const seg of scriptRes.segments) {
+                    const audioBase64 = await generateSpeech(seg.text, personas.speakerVoiceName);
+                    slideAudioBase64s.push(audioBase64);
+                    
+                    const binaryLength = atob(audioBase64).length;
+                    const durationMs = (binaryLength / 2 / 24000) * 1000;
+                    
+                    timings.push({
+                       ...seg,
+                       startTime: currentMs,
+                       endTime: currentMs + durationMs
+                    });
+                    currentMs += durationMs;
+                 }
+                 generatedAudioBase64s[i] = slideAudioBase64s;
+                 finalAudioUrl = mergePcmBase64ToWavUrl(slideAudioBase64s);
+              } else {
+                 const audioBase64 = await generateSpeech(scriptRes.script, personas.speakerVoiceName);
+                 slideAudioBase64s = [audioBase64];
+                 generatedAudioBase64s[i] = slideAudioBase64s;
+                 finalAudioUrl = pcmBase64ToWavUrl(audioBase64);
+              }
+
+              setSlides(prev => prev.map(s => s.id === slide.id ? { ...s, state: 'DONE', audioUrl: finalAudioUrl, timings } : s));
            } catch (audioErr: any) {
               console.error(`Audio error on slide ${slide.id}:`, audioErr);
               setSlides(prev => prev.map(s => s.id === slide.id ? { ...s, state: 'ERROR', error: audioErr.message || 'Audio failed' } : s));
@@ -98,16 +137,15 @@ export default function Home() {
       } catch (err: any) {
         console.error(`Error on slide ${slide.id}:`, err);
         setSlides(prev => prev.map(s => s.id === slide.id ? { ...s, state: 'ERROR', error: err.message || 'Failed processing' } : s));
-        // Push a placeholder empty string to keep arrays aligned in case of script error, or continue
       }
     }
 
     // Wait for all remaining audio generations to finish
     await Promise.all(audioPromises);
 
-    const validAudio = generatedAudioBase64s.filter(a => a !== '');
-    if (validAudio.length > 0) {
-      const mergedUrl = mergePcmBase64ToWavUrl(validAudio);
+    const flatAudio = generatedAudioBase64s.flat().filter(a => a !== '');
+    if (flatAudio.length > 0) {
+      const mergedUrl = mergePcmBase64ToWavUrl(flatAudio);
       setFullLectureAudioUrl(mergedUrl);
     }
 
@@ -115,6 +153,7 @@ export default function Home() {
   };
 
   const activeSlide = slides.find(s => s.id === activeSlideId);
+  const activeSegment = activeSlide?.timings?.find(t => audioTime >= t.startTime && audioTime < t.endTime);
 
   return (
     <div className="flex flex-col h-screen bg-[#0F1115] text-[#E0E2E6] font-sans overflow-hidden">
@@ -170,14 +209,32 @@ export default function Home() {
             {error && <p className="text-red-400 text-[10px] mt-2">{error}</p>}
             
             {(appState === 'IDLE' || appState === 'ERROR' || appState === 'READY' || appState === 'COMPLETE') && (
-              <div className="mt-4">
-                <label className="text-[10px] text-slate-500 uppercase font-bold mb-2 block">Custom Instructions (Optional)</label>
-                <textarea 
-                  value={additionalInstructions}
-                  onChange={(e) => setAdditionalInstructions(e.target.value)}
-                  placeholder="e.g. Focus on definitions, give medical analogies, or speak slowly..."
-                  className="w-full bg-[#15181F] border border-[#2D3139] rounded p-2 text-xs text-slate-300 placeholder:text-slate-600 outline-none focus:border-blue-500/50 resize-y min-h-[60px]"
-                />
+              <div className="mt-4 space-y-3">
+                <div>
+                  <label className="text-[10px] text-slate-500 uppercase font-bold mb-2 block">Custom Instructions (Optional)</label>
+                  <textarea 
+                    value={additionalInstructions}
+                    onChange={(e) => setAdditionalInstructions(e.target.value)}
+                    placeholder="e.g. Focus on definitions, give medical analogies, or speak slowly..."
+                    className="w-full bg-[#15181F] border border-[#2D3139] rounded p-2 text-xs text-slate-300 placeholder:text-slate-600 outline-none focus:border-blue-500/50 resize-y min-h-[60px]"
+                  />
+                </div>
+
+                <div className="flex items-center justify-between bg-[#15181F] p-3 rounded border border-[#2D3139]">
+                  <div className="flex items-center gap-2">
+                    <div className="w-5 h-5 flex items-center justify-center bg-purple-500/20 text-purple-400 rounded text-[10px]">✨</div>
+                    <span className="text-[10px] uppercase tracking-wider font-bold text-slate-300">Visual Annotations (Beta)</span>
+                  </div>
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input 
+                      type="checkbox" 
+                      className="sr-only peer" 
+                      checked={enableAnnotations} 
+                      onChange={e => setEnableAnnotations(e.target.checked)} 
+                    />
+                    <div className="w-9 h-5 bg-[#2D3139] peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-slate-300 after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-purple-600"></div>
+                  </label>
+                </div>
               </div>
             )}
           </div>
@@ -208,7 +265,7 @@ export default function Home() {
                   <label className="text-[10px] text-slate-500 uppercase font-bold mb-3 block">Instructor Persona</label>
                   <div className="bg-[#15181F] p-3 rounded border border-[#2D3139]">
                     <div className="text-[11px] text-slate-400 leading-relaxed italic line-clamp-6" title={personas.writerPersona}>
-                      "{personas.writerPersona}"
+                      &quot;{personas.writerPersona}&quot;
                     </div>
                   </div>
                 </div>
@@ -230,15 +287,25 @@ export default function Home() {
 
               <div className="flex-1 bg-[#1A1D24] rounded-lg border border-[#2D3139] relative flex flex-col shadow-inner overflow-hidden">
                 <div className="flex-1 overflow-y-auto p-6 space-y-6 flex flex-col">
-                  {/* Image View */}
+                  {/* Image View with Spatial Annotations */}
                   <div className="flex justify-center bg-[#0A0C10] p-4 rounded border border-[#2D3139]">
-                     <img src={`data:image/jpeg;base64,${activeSlide.imgBase64}`} alt="Current Document Page" className="max-h-[50vh] object-contain rounded" />
+                     <div className="relative inline-block h-[50vh]">
+                       <img src={`data:image/jpeg;base64,${activeSlide.imgBase64}`} alt="Current Document Page" className="h-full w-auto object-contain rounded select-none shadow-md" />
+                       {activeSegment && activeSegment.annotationType !== 'none' && (
+                         <AnnotationBox annotation={activeSegment} />
+                       )}
+                     </div>
                   </div>
                   
                   {activeSlide.audioUrl && (
                     <div className="bg-[#15181F] p-4 rounded border border-[#2D3139] flex flex-col gap-2">
                        <h4 className="text-[10px] uppercase tracking-widest font-bold text-slate-500">Generated Audio</h4>
-                       <audio controls src={activeSlide.audioUrl} className="w-full h-8 outline-none" />
+                       <audio 
+                         controls 
+                         src={activeSlide.audioUrl} 
+                         onTimeUpdate={(e) => setAudioTime(e.currentTarget.currentTime * 1000)}
+                         className="w-full h-8 outline-none" 
+                       />
                     </div>
                   )}
 
@@ -247,7 +314,17 @@ export default function Home() {
                       <h4 className="text-[10px] uppercase tracking-widest font-bold text-slate-500 mb-3 flex items-center gap-2">
                         <FileText className="w-3 h-3"/> Script output
                       </h4>
-                      <p className="text-sm leading-relaxed text-slate-300 font-serif whitespace-pre-wrap">{activeSlide.script}</p>
+                      <div className="text-sm leading-relaxed text-slate-300 font-serif whitespace-pre-wrap">
+                        {activeSlide.timings ? (
+                           activeSlide.timings.map((seg, i) => (
+                             <span key={i} className={`transition-colors ${audioTime >= seg.startTime && audioTime < seg.endTime ? 'text-white font-medium bg-blue-500/10' : ''}`}>
+                               {seg.text}{" "}
+                             </span>
+                           ))
+                        ) : (
+                          activeSlide.script
+                        )}
+                      </div>
                     </div>
                   )}
 
@@ -301,7 +378,7 @@ export default function Home() {
                     <StateBadge state={slide.state} />
                   </div>
                   {slide.script ? (
-                    <p className="text-[11px] text-slate-300 truncate font-serif">"{slide.script}"</p>
+                    <p className="text-[11px] text-slate-300 truncate font-serif">&quot;{slide.script}&quot;</p>
                   ) : (
                     <p className="text-[11px] text-slate-500 italic">No script yet...</p>
                   )}
@@ -371,4 +448,38 @@ function StateBadge({ state }: { state: SlideState }) {
      return <span className="text-[9px] bg-red-500/20 text-red-400 px-1.5 py-0.5 rounded uppercase">ERROR</span>;
   }
   return null;
+}
+
+function AnnotationBox({ annotation }: { annotation: any }) {
+  const box = annotation.box_2d;
+  if (!box || box.length !== 4) return null;
+  const top = `${box[0] / 10}%`;
+  const left = `${box[1] / 10}%`;
+  const height = `${(box[2] - box[0]) / 10}%`;
+  const width = `${(box[3] - box[1]) / 10}%`;
+
+  let styleClass = '';
+  if (annotation.annotationType === 'highlight') {
+    styleClass = 'bg-yellow-400/20 border-2 border-yellow-400 rounded-sm shadow-[0_0_15px_rgba(250,204,21,0.5)] backdrop-brightness-110';
+  } else if (annotation.annotationType === 'circle') {
+    styleClass = 'border-[3px] border-red-500 rounded-[100%] shadow-[0_0_15px_rgba(239,68,68,0.5)]';
+  } else if (annotation.annotationType === 'pointer') {
+    styleClass = 'border-2 border-blue-500 bg-blue-500/10 shadow-[0_0_15px_rgba(59,130,246,0.5)]';
+  } else {
+    return null;
+  }
+
+  return (
+    <div 
+      className={`absolute z-10 pointer-events-none transition-all duration-300 ease-in-out ${styleClass}`}
+      style={{ top, left, width, height }}
+    >
+      {annotation.annotationType === 'pointer' && (
+        <div className="absolute -top-3 -right-3 w-4 h-4 bg-blue-500 rounded-full animate-ping"></div>
+      )}
+      {annotation.annotationType === 'pointer' && (
+        <div className="absolute -top-3 -right-3 w-4 h-4 bg-blue-600 rounded-full border-2 border-[#0A0C10]"></div>
+      )}
+    </div>
+  );
 }
