@@ -16,6 +16,13 @@ interface ApiKeyInfo {
   key: string;
 }
 
+interface CostReportData {
+  inputTokens: number;
+  outputTokens: number;
+  ttsCharacters: number;
+  ttsApiCalls: number;
+}
+
 interface SlideResult {
   id: number;
   imgBase64: string;
@@ -42,6 +49,8 @@ export default function Home() {
   const [selectedApiKeyId, setSelectedApiKeyId] = useState<string | null>(null);
   const [newKeyName, setNewKeyName] = useState('');
   const [newKeyValue, setNewKeyValue] = useState('');
+  const [costReport, setCostReport] = useState<CostReportData | null>(null);
+  const [isCostModalOpen, setIsCostModalOpen] = useState(false);
 
   useEffect(() => {
     const savedKeys = localStorage.getItem('gemini_api_keys');
@@ -166,6 +175,13 @@ export default function Home() {
       const personaRes = await determinePersonas(extractedImages, additionalInstructions);
       setPersonas(personaRes);
       
+      setCostReport({
+        inputTokens: personaRes.usage?.inputTokens || 0,
+        outputTokens: personaRes.usage?.outputTokens || 0,
+        ttsCharacters: 0,
+        ttsApiCalls: 0
+      });
+      
       setAppState('READY');
     } catch (err: any) {
       console.error(err);
@@ -183,6 +199,11 @@ export default function Home() {
     const generatedAudioBase64s: string[][] = new Array(slides.length).fill([]);
     const audioPromises: Promise<void>[] = [];
 
+    let totalInputTokens = costReport?.inputTokens || 0;
+    let totalOutputTokens = costReport?.outputTokens || 0;
+    let totalTtsCharacters = costReport?.ttsCharacters || 0;
+    let totalTtsApiCalls = costReport?.ttsApiCalls || 0;
+
     // Process scripts sequentially to maintain context
     for (let i = 0; i < slides.length; i++) {
       const slide = slides[i];
@@ -192,6 +213,11 @@ export default function Home() {
         // Script generation
         setSlides(prev => prev.map(s => s.id === slide.id ? { ...s, state: 'GENERATING_SCRIPT' } : s));
         const scriptRes = await generateSlideScript(slide.imgBase64, personas, i, slides.length, previousSummaries, additionalInstructions, enableAnnotations);
+        
+        totalInputTokens += scriptRes.usage?.inputTokens || 0;
+        totalOutputTokens += scriptRes.usage?.outputTokens || 0;
+        setCostReport(prev => prev ? { ...prev, inputTokens: totalInputTokens, outputTokens: totalOutputTokens } : prev);
+        
         previousSummaries.push(scriptRes.summaryForNextSlide);
         setSlides(prev => prev.map(s => s.id === slide.id ? { ...s, script: scriptRes.script, state: 'GENERATING_AUDIO' } : s));
 
@@ -205,10 +231,14 @@ export default function Home() {
               if (enableAnnotations && scriptRes.segments && scriptRes.segments.length > 0) {
                  let currentMs = 0;
                  for (const seg of scriptRes.segments) {
-                    const audioBase64 = await generateSpeech(seg.text, personas.speakerVoiceName);
-                    slideAudioBase64s.push(audioBase64);
+                    const { base64Audio, characters } = await generateSpeech(seg.text, personas.speakerVoiceName);
+                    slideAudioBase64s.push(base64Audio);
                     
-                    const binaryLength = atob(audioBase64).length;
+                    totalTtsCharacters += characters;
+                    totalTtsApiCalls += 1;
+                    setCostReport(prev => prev ? { ...prev, ttsCharacters: totalTtsCharacters, ttsApiCalls: totalTtsApiCalls } : prev);
+                    
+                    const binaryLength = atob(base64Audio).length;
                     const durationMs = (binaryLength / 2 / 24000) * 1000;
                     
                     timings.push({
@@ -221,10 +251,15 @@ export default function Home() {
                  generatedAudioBase64s[i] = slideAudioBase64s;
                  finalAudioUrl = mergePcmBase64ToWavUrl(slideAudioBase64s);
               } else {
-                 const audioBase64 = await generateSpeech(scriptRes.script, personas.speakerVoiceName);
-                 slideAudioBase64s = [audioBase64];
+                 const { base64Audio, characters } = await generateSpeech(scriptRes.script, personas.speakerVoiceName);
+                 
+                 totalTtsCharacters += characters;
+                 totalTtsApiCalls += 1;
+                 setCostReport(prev => prev ? { ...prev, ttsCharacters: totalTtsCharacters, ttsApiCalls: totalTtsApiCalls } : prev);
+                 
+                 slideAudioBase64s = [base64Audio];
                  generatedAudioBase64s[i] = slideAudioBase64s;
-                 finalAudioUrl = pcmBase64ToWavUrl(audioBase64);
+                 finalAudioUrl = pcmBase64ToWavUrl(base64Audio);
               }
 
               setSlides(prev => prev.map(s => s.id === slide.id ? { ...s, state: 'DONE', audioUrl: finalAudioUrl, timings } : s));
@@ -267,6 +302,15 @@ export default function Home() {
           <h1 className="text-sm font-semibold tracking-wide uppercase">LectureGen AI Course Architect</h1>
         </div>
         <div className="flex gap-3">
+          {costReport && (
+            <button
+              onClick={() => setIsCostModalOpen(true)}
+              className="px-3 py-1.5 text-xs bg-slate-800 rounded hover:bg-slate-700 font-medium text-green-400 transition-colors flex items-center gap-2 border border-slate-700 hover:border-slate-600"
+            >
+              <FileText className="w-3 h-3" />
+              Cost Report
+            </button>
+          )}
           <button
             onClick={() => setIsApiKeyModalOpen(true)}
             className="px-3 py-1.5 text-xs bg-slate-800 rounded hover:bg-slate-700 font-medium text-slate-300 transition-colors flex items-center gap-2 border border-slate-700 hover:border-slate-600"
@@ -547,6 +591,84 @@ export default function Home() {
           <span>V 1.0.0</span>
         </div>
       </footer>
+
+      {/* Cost Report Modal */}
+      <AnimatePresence>
+        {isCostModalOpen && costReport && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm"
+          >
+            <motion.div
+              initial={{ scale: 0.95, y: 10, opacity: 0 }}
+              animate={{ scale: 1, y: 0, opacity: 1 }}
+              exit={{ scale: 0.95, y: 10, opacity: 0 }}
+              className="w-full max-w-lg bg-[#12151B] border border-[#2D3139] rounded shadow-2xl overflow-hidden"
+            >
+              <div className="flex items-center justify-between p-4 border-b border-[#2D3139]">
+                <h3 className="text-sm font-semibold text-white flex items-center gap-2">
+                  <FileText className="w-4 h-4 text-green-400" />
+                  Operation Cost Report
+                </h3>
+                <button
+                  onClick={() => setIsCostModalOpen(false)}
+                  className="text-slate-500 hover:text-white transition-colors"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              <div className="p-6 space-y-6">
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="bg-[#1A1D24] border border-[#2D3139] p-4 rounded">
+                    <div className="text-[10px] uppercase tracking-wider text-slate-500 mb-1">Text Models (Pro)</div>
+                    <div className="text-xl font-mono text-blue-400">
+                      {((costReport.inputTokens * 0.00000125) + (costReport.outputTokens * 0.00000375)).toFixed(4)}$
+                    </div>
+                    <div className="text-xs text-slate-400 mt-2">
+                      <div>Input: {costReport.inputTokens.toLocaleString()} tokens</div>
+                      <div>Output: {costReport.outputTokens.toLocaleString()} tokens</div>
+                    </div>
+                  </div>
+                  
+                  <div className="bg-[#1A1D24] border border-[#2D3139] p-4 rounded">
+                    <div className="text-[10px] uppercase tracking-wider text-slate-500 mb-1">TTS/Audio Models</div>
+                    <div className="text-xl font-mono text-purple-400">
+                      {(costReport.ttsCharacters * 0.000016).toFixed(4)}$
+                    </div>
+                    <div className="text-xs text-slate-400 mt-2">
+                      <div>Chars: {costReport.ttsCharacters.toLocaleString()}</div>
+                      <div>API Calls: {costReport.ttsApiCalls.toLocaleString()}</div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="bg-green-500/10 border border-green-500/30 p-4 rounded text-center">
+                  <div className="text-[10px] uppercase tracking-wider text-green-500 mb-1">Total Estimated Cost</div>
+                  <div className="text-3xl font-mono text-green-400 font-bold">
+                    {((costReport.inputTokens * 0.00000125) + (costReport.outputTokens * 0.00000375) + (costReport.ttsCharacters * 0.000016)).toFixed(4)}$
+                  </div>
+                </div>
+                
+                <div className="text-[10px] text-slate-500 text-center px-4">
+                  * Note: This is an estimated cost. It uses standard Gemini Pro 1.5 token pricing ($1.25/M input, $3.75/M output) and standard TTS pricing ($16/M chars). Actual Gemini 3.1 Flash TTS pricing may vary.
+                </div>
+              </div>
+
+              <div className="flex justify-end p-4 border-t border-[#2D3139] bg-[#0A0C10]">
+                <button
+                  onClick={() => setIsCostModalOpen(false)}
+                  className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white text-xs font-medium rounded transition-colors"
+                >
+                  Close
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Exporting Overlay */}
       <AnimatePresence>

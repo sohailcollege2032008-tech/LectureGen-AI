@@ -28,10 +28,16 @@ const getAI = () => {
   return new GoogleGenAI({ apiKey });
 };
 
+export interface UsageInfo {
+  inputTokens: number;
+  outputTokens: number;
+}
+
 export interface PersonasResult {
   speakerVoiceName: 'Puck' | 'Charon' | 'Kore' | 'Fenrir' | 'Zephyr';
   writerPersona: string;
   explanationGuidelines: string;
+  usage?: UsageInfo;
 }
 
 /**
@@ -99,7 +105,12 @@ Output a JSON object with:
     });
 
     const jsonStr = response.text?.trim() || '{}';
-    return JSON.parse(jsonStr) as PersonasResult;
+    const result = JSON.parse(jsonStr) as PersonasResult;
+    result.usage = {
+      inputTokens: response.usageMetadata?.promptTokenCount || 0,
+      outputTokens: response.usageMetadata?.candidatesTokenCount || 0,
+    };
+    return result;
   } catch (error) {
     console.error("Error determining personas:", error);
     throw new Error('Failed to analyze document personas');
@@ -116,6 +127,7 @@ export interface SlideScriptResult {
   script: string;
   summaryForNextSlide: string;
   segments?: ScriptSegment[];
+  usage?: UsageInfo;
 }
 
 /**
@@ -229,6 +241,9 @@ CRITICAL INSTRUCTIONS:
 
     const jsonStr = response.text?.trim() || '{}';
     const initialResult = JSON.parse(jsonStr) as SlideScriptResult;
+    
+    let totalInputTokens = response.usageMetadata?.promptTokenCount || 0;
+    let totalOutputTokens = response.usageMetadata?.candidatesTokenCount || 0;
 
     // Refinement step for annotations
     if (enableAnnotations && initialResult.segments && initialResult.segments.length > 0) {
@@ -260,9 +275,16 @@ Return the exact same JSON structure, but with the refined and highly accurate '
        });
 
        const refinedJsonStr = refinementResponse.text?.trim() || '{}';
-       return JSON.parse(refinedJsonStr) as SlideScriptResult;
+       const refinedResult = JSON.parse(refinedJsonStr) as SlideScriptResult;
+       
+       totalInputTokens += refinementResponse.usageMetadata?.promptTokenCount || 0;
+       totalOutputTokens += refinementResponse.usageMetadata?.candidatesTokenCount || 0;
+       
+       refinedResult.usage = { inputTokens: totalInputTokens, outputTokens: totalOutputTokens };
+       return refinedResult;
     }
 
+    initialResult.usage = { inputTokens: totalInputTokens, outputTokens: totalOutputTokens };
     return initialResult;
   } catch (error) {
     console.error("Error generating script:", error);
@@ -273,7 +295,7 @@ Return the exact same JSON structure, but with the refined and highly accurate '
 /**
  * Generates TTS audio for a given script using the selected voice.
  */
-export async function generateSpeech(text: string, voiceName: string): Promise<string> {
+export async function generateSpeech(text: string, voiceName: string): Promise<{ base64Audio: string, characters: number }> {
   const ai = getAI();
 
   try {
@@ -294,7 +316,7 @@ export async function generateSpeech(text: string, voiceName: string): Promise<s
     if (!base64Audio) {
       throw new Error("No audio returned from model");
     }
-    return base64Audio;
+    return { base64Audio, characters: text.length };
   } catch (error) {
     console.error("Error generating speech:", error);
     throw new Error('Failed to generate speech for script');
