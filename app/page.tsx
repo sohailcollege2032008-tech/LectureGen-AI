@@ -106,16 +106,17 @@ export default function Home() {
     setExportProgress(0);
     
     try {
-      const videoUrl = await exportToVideo(
+      const { url: videoUrl, mimeType } = await exportToVideo(
         `data:image/jpeg;base64,${activeSlide.imgBase64}`,
         activeSlide.audioUrl,
         activeSlide.timings.map(t => ({...t, startTime: t.startTime / 1000, endTime: t.endTime / 1000})),
         (progress) => setExportProgress(progress)
       );
       
+      const fileExtension = mimeType.includes('mp4') ? 'mp4' : 'webm';
       const a = document.createElement('a');
       a.href = videoUrl;
-      a.download = `slide_${activeSlide.id + 1}_export.webm`;
+      a.download = `slide_${activeSlide.id + 1}_export.${fileExtension}`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);

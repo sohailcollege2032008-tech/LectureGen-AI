@@ -10,7 +10,7 @@ export async function exportToVideo(
   audioUrl: string,
   timing: SegmentTiming[],
   onProgress: (progress: number) => void
-): Promise<string> {
+): Promise<{url: string, mimeType: string}> {
   return new Promise(async (resolve, reject) => {
     try {
       const canvas = document.createElement('canvas');
@@ -54,6 +54,8 @@ export async function exportToVideo(
       const mediaStream = new MediaStream(tracks);
       
       const mimeTypes = [
+          'video/mp4;codecs=avc1,mp4a.40.2',
+          'video/mp4',
           'video/webm;codecs=vp9,opus',
           'video/webm;codecs=vp8,opus',
           'video/webm'
@@ -72,9 +74,9 @@ export async function exportToVideo(
       };
 
       recorder.onstop = () => {
-        const resultBlob = new Blob(chunks, { type: mimeType || 'video/webm' });
+        const resultBlob = new Blob(chunks, { type: mimeType || 'video/mp4' });
         const url = URL.createObjectURL(resultBlob);
-        resolve(url);
+        resolve({ url, mimeType });
       };
 
       let isRecording = true;
