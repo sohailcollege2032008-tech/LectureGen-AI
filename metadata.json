@@ -1,0 +1,6 @@
+{
+  "name": "LectureGen AI",
+  "description": "An AI automation tool that converts lecture slides and PDFs into engaging, persona-driven audio lectures using Gemini 3.1 Pro and Gemini TTS.",
+  "requestFramePermissions": [],
+  "majorCapabilities": []
+}
