@@ -4,10 +4,16 @@ import { useState, useRef, useEffect } from 'react';
 import { extractImagesFromPdf } from '@/lib/pdf-utils';
 import { determinePersonas, generateSlideScript, generateSpeech, PersonasResult, ScriptSegment } from '@/lib/ai-service';
 import { pcmBase64ToWavUrl, mergePcmBase64ToWavUrl } from '@/lib/audio-utils';
-import { UploadCloud, Play, Settings2, FileText, CheckCircle2, Loader2, BookOpen, MousePointer2 } from 'lucide-react';
+import { UploadCloud, Play, Settings2, FileText, CheckCircle2, Loader2, BookOpen, MousePointer2, Key, Plus, Trash2, X } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
 type SlideState = 'PENDING' | 'GENERATING_SCRIPT' | 'GENERATING_AUDIO' | 'DONE' | 'ERROR';
+
+interface ApiKeyInfo {
+  id: string;
+  name: string;
+  key: string;
+}
 
 interface SegmentTiming extends ScriptSegment {
   startTime: number;
@@ -34,6 +40,67 @@ export default function Home() {
   const [fullLectureAudioUrl, setFullLectureAudioUrl] = useState<string | null>(null);
   const [additionalInstructions, setAdditionalInstructions] = useState<string>('');
   const [enableAnnotations, setEnableAnnotations] = useState<boolean>(false);
+  
+  const [isApiKeyModalOpen, setIsApiKeyModalOpen] = useState(false);
+  const [apiKeys, setApiKeys] = useState<ApiKeyInfo[]>([]);
+  const [selectedApiKeyId, setSelectedApiKeyId] = useState<string | null>(null);
+  const [newKeyName, setNewKeyName] = useState('');
+  const [newKeyValue, setNewKeyValue] = useState('');
+
+  useEffect(() => {
+    const savedKeys = localStorage.getItem('gemini_api_keys');
+    const selectedId = localStorage.getItem('gemini_api_key_selected_id');
+    if (savedKeys) {
+      try {
+        setApiKeys(JSON.parse(savedKeys));
+      } catch (e) {
+        console.error('Failed to parse api keys', e);
+      }
+    }
+    if (selectedId) {
+      setSelectedApiKeyId(selectedId);
+    }
+  }, []);
+
+  const saveApiKey = () => {
+    if (!newKeyName.trim() || !newKeyValue.trim()) return;
+    const newKey: ApiKeyInfo = {
+      id: Date.now().toString(),
+      name: newKeyName.trim(),
+      key: newKeyValue.trim(),
+    };
+    const updatedKeys = [...apiKeys, newKey];
+    setApiKeys(updatedKeys);
+    localStorage.setItem('gemini_api_keys', JSON.stringify(updatedKeys));
+    
+    if (!selectedApiKeyId) {
+      setSelectedApiKeyId(newKey.id);
+      localStorage.setItem('gemini_api_key_selected_id', newKey.id);
+    }
+    
+    setNewKeyName('');
+    setNewKeyValue('');
+  };
+
+  const deleteApiKey = (id: string) => {
+    const updatedKeys = apiKeys.filter(k => k.id !== id);
+    setApiKeys(updatedKeys);
+    localStorage.setItem('gemini_api_keys', JSON.stringify(updatedKeys));
+    if (selectedApiKeyId === id) {
+      const newSelectedId = updatedKeys.length > 0 ? updatedKeys[0].id : null;
+      setSelectedApiKeyId(newSelectedId);
+      if (newSelectedId) {
+        localStorage.setItem('gemini_api_key_selected_id', newSelectedId);
+      } else {
+        localStorage.removeItem('gemini_api_key_selected_id');
+      }
+    }
+  };
+
+  const selectApiKey = (id: string) => {
+    setSelectedApiKeyId(id);
+    localStorage.setItem('gemini_api_key_selected_id', id);
+  };
   
   const [audioTime, setAudioTime] = useState<number>(0);
 
@@ -167,6 +234,14 @@ export default function Home() {
           <h1 className="text-sm font-semibold tracking-wide uppercase">LectureGen AI Course Architect</h1>
         </div>
         <div className="flex gap-3">
+          <button
+            onClick={() => setIsApiKeyModalOpen(true)}
+            className="px-3 py-1.5 text-xs bg-slate-800 rounded hover:bg-slate-700 font-medium text-slate-300 transition-colors flex items-center gap-2 border border-slate-700 hover:border-slate-600"
+          >
+            <Key className="w-3 h-3" />
+            API Keys
+          </button>
+          
           <button 
             onClick={startLectureGeneration}
             disabled={appState !== 'READY'}
@@ -428,6 +503,114 @@ export default function Home() {
           <span>V 1.0.0</span>
         </div>
       </footer>
+
+      {/* API Key Modal */}
+      {isApiKeyModalOpen && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <motion.div 
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="w-full max-w-md bg-[#12151B] border border-[#2D3139] rounded-lg shadow-2xl flex flex-col overflow-hidden"
+          >
+            <div className="flex items-center justify-between p-4 border-b border-[#2D3139] bg-[#0A0C10]">
+              <h2 className="text-sm font-semibold flex items-center gap-2">
+                <Key className="w-4 h-4 text-blue-400" />
+                Manage API Keys
+              </h2>
+              <button 
+                onClick={() => setIsApiKeyModalOpen(false)}
+                className="p-1 hover:bg-[#2D3139] rounded text-slate-400 hover:text-white transition-colors"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            
+            <div className="p-4 flex-1 overflow-y-auto max-h-[60vh]">
+              <p className="text-xs text-slate-400 mb-4 leading-relaxed">
+                Add your personal Gemini API keys. Keys will be stored securely in your browser's local storage and used to run the generation.
+              </p>
+
+              {/* add form */}
+              <div className="bg-[#0A0C10] p-3 rounded border border-[#2D3139] mb-6 shadow-inner">
+                <h3 className="text-[10px] uppercase font-bold text-slate-500 mb-3 tracking-wider">Add New Key</h3>
+                <div className="space-y-3">
+                  <div>
+                    <input 
+                      type="text" 
+                      placeholder="Identifier (e.g. Personal Key)"
+                      value={newKeyName}
+                      onChange={(e) => setNewKeyName(e.target.value)}
+                      className="w-full bg-[#15181F] border border-[#2D3139] rounded p-2 text-xs focus:outline-none focus:border-blue-500 transition-colors placeholder:text-slate-600"
+                    />
+                  </div>
+                  <div className="flex gap-2">
+                    <input 
+                      type="password" 
+                      placeholder="AIzaSy..."
+                      value={newKeyValue}
+                      onChange={(e) => setNewKeyValue(e.target.value)}
+                      className="w-full bg-[#15181F] border border-[#2D3139] rounded p-2 text-xs focus:outline-none focus:border-blue-500 transition-colors placeholder:text-slate-600"
+                    />
+                    <button 
+                      onClick={saveApiKey}
+                      disabled={!newKeyName.trim() || !newKeyValue.trim()}
+                      className="shrink-0 bg-blue-600 hover:bg-blue-500 disabled:bg-slate-700 disabled:text-slate-400 text-white rounded px-3 flex items-center gap-1 text-xs font-medium transition-colors"
+                    >
+                      <Plus className="w-3 h-3" />
+                      Add
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <h3 className="text-[10px] uppercase font-bold text-slate-500 mb-2 tracking-wider">Saved Keys</h3>
+                {apiKeys.length === 0 ? (
+                   <div className="text-center p-4 border border-dashed border-[#2D3139] rounded text-slate-500 text-xs italic">
+                     No saved keys yet
+                   </div>
+                ) : (
+                  apiKeys.map(key => (
+                    <div 
+                      key={key.id} 
+                      className={`flex items-center justify-between p-3 rounded border transition-colors cursor-pointer ${selectedApiKeyId === key.id ? 'bg-blue-600/10 border-blue-500/50' : 'bg-[#15181F] border-[#2D3139] hover:border-slate-600'}`}
+                      onClick={() => selectApiKey(key.id)}
+                    >
+                       <div className="flex items-center gap-3">
+                         <div className={`w-3 h-3 rounded-full flex items-center justify-center shrink-0 ${selectedApiKeyId === key.id ? 'bg-blue-500 text-white' : 'border border-slate-600'}`}>
+                           {selectedApiKeyId === key.id && <div className="w-1.5 h-1.5 rounded-full bg-[#0F1115]"></div>}
+                         </div>
+                         <div>
+                            <p className={`text-xs font-medium ${selectedApiKeyId === key.id ? 'text-blue-400' : 'text-slate-300'}`}>{key.name}</p>
+                            <p className="text-[10px] text-slate-500 font-mono mt-0.5">
+                              {key.key.substring(0, 8)}...{key.key.substring(key.key.length - 4)}
+                            </p>
+                         </div>
+                       </div>
+                       
+                       <button 
+                         onClick={(e) => { e.stopPropagation(); deleteApiKey(key.id); }}
+                         className="p-1.5 text-slate-500 hover:text-red-400 hover:bg-red-500/10 rounded transition-colors"
+                       >
+                         <Trash2 className="w-3.5 h-3.5" />
+                       </button>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+            
+            <div className="p-4 border-t border-[#2D3139] bg-[#0A0C10] flex justify-end">
+              <button 
+                onClick={() => setIsApiKeyModalOpen(false)}
+                className="px-4 py-1.5 text-xs bg-blue-600 hover:bg-blue-500 rounded text-white font-medium transition-colors"
+              >
+                Done
+              </button>
+            </div>
+          </motion.div>
+        </div>
+      )}
     </div>
   );
 }

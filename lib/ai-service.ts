@@ -2,9 +2,28 @@ import { GoogleGenAI, Type, Modality } from "@google/genai";
 
 // Ensure this only runs on the client.
 const getAI = () => {
-  const apiKey = process.env.NEXT_PUBLIC_GEMINI_API_KEY;
+  if (typeof window === 'undefined') {
+    throw new Error('getAI must be called on the client');
+  }
+  
+  let apiKey = process.env.NEXT_PUBLIC_GEMINI_API_KEY;
+  
+  try {
+    const selectedId = localStorage.getItem('gemini_api_key_selected_id');
+    const savedKeysStr = localStorage.getItem('gemini_api_keys');
+    if (selectedId && savedKeysStr) {
+      const keys = JSON.parse(savedKeysStr);
+      const selectedKey = keys.find((k: any) => k.id === selectedId);
+      if (selectedKey && selectedKey.key) {
+        apiKey = selectedKey.key;
+      }
+    }
+  } catch (e) {
+    console.error('Failed to parse API keys from localStorage', e);
+  }
+
   if (!apiKey) {
-    throw new Error('NEXT_PUBLIC_GEMINI_API_KEY environment variable is required');
+    throw new Error('API key is required. Please set up an API Key in the top menu.');
   }
   return new GoogleGenAI({ apiKey });
 };
