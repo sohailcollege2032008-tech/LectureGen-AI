@@ -4,8 +4,9 @@ import { useState, useRef, useEffect } from 'react';
 import { extractImagesFromPdf } from '@/lib/pdf-utils';
 import { determinePersonas, generateSlideScript, generateSpeech, PersonasResult, ScriptSegment } from '@/lib/ai-service';
 import { pcmBase64ToWavUrl, mergePcmBase64ToWavUrl } from '@/lib/audio-utils';
-import { UploadCloud, Play, Settings2, FileText, CheckCircle2, Loader2, BookOpen, MousePointer2, Key, Plus, Trash2, X } from 'lucide-react';
+import { UploadCloud, Play, Settings2, FileText, CheckCircle2, Loader2, BookOpen, MousePointer2, Key, Plus, Trash2, X, Download, Video } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { exportToVideo, SegmentTiming } from '@/lib/video-export';
 
 type SlideState = 'PENDING' | 'GENERATING_SCRIPT' | 'GENERATING_AUDIO' | 'DONE' | 'ERROR';
 
@@ -13,11 +14,6 @@ interface ApiKeyInfo {
   id: string;
   name: string;
   key: string;
-}
-
-interface SegmentTiming extends ScriptSegment {
-  startTime: number;
-  endTime: number;
 }
 
 interface SlideResult {
@@ -102,7 +98,39 @@ export default function Home() {
     localStorage.setItem('gemini_api_key_selected_id', id);
   };
   
+  const handleExportVideo = async () => {
+    const activeSlide = slides.find(s => s.id === activeSlideId);
+    if (!activeSlide || !activeSlide.imgBase64 || !activeSlide.audioUrl || !activeSlide.timings) return;
+    
+    setIsExporting(true);
+    setExportProgress(0);
+    
+    try {
+      const videoUrl = await exportToVideo(
+        `data:image/jpeg;base64,${activeSlide.imgBase64}`,
+        activeSlide.audioUrl,
+        activeSlide.timings.map(t => ({...t, startTime: t.startTime / 1000, endTime: t.endTime / 1000})),
+        (progress) => setExportProgress(progress)
+      );
+      
+      const a = document.createElement('a');
+      a.href = videoUrl;
+      a.download = `slide_${activeSlide.id + 1}_export.webm`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(videoUrl);
+    } catch (error) {
+      console.error('Failed to export video:', error);
+      alert('Failed to export video. Please try again.');
+    } finally {
+      setIsExporting(false);
+    }
+  };
+  
   const [audioTime, setAudioTime] = useState<number>(0);
+  const [isExporting, setIsExporting] = useState<boolean>(false);
+  const [exportProgress, setExportProgress] = useState<number>(0);
 
   useEffect(() => {
     setAudioTime(0);
@@ -355,8 +383,19 @@ export default function Home() {
           {activeSlide ? (
             <>
               <div className="flex items-center justify-between mb-4">
-                <div className="flex gap-4">
+                <div className="flex gap-4 items-center">
                   <div className="px-3 py-1.5 bg-blue-600/10 border border-blue-500/50 text-blue-400 text-[10px] uppercase font-bold tracking-wider rounded">Slide View</div>
+                  
+                  {activeSlide.audioUrl && activeSlide.timings && (
+                    <button
+                      onClick={handleExportVideo}
+                      disabled={isExporting}
+                      className="px-3 py-1.5 border border-slate-600 rounded text-xs font-medium text-slate-300 hover:text-white hover:bg-slate-800 transition-colors flex items-center gap-2 group disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {isExporting ? <Loader2 className="w-3 h-3 animate-spin"/> : <Download className="w-3 h-3 group-hover:text-blue-400"/>}
+                      {isExporting ? 'Exporting...' : 'Export Video'}
+                    </button>
+                  )}
                 </div>
                 <div className="text-xs text-slate-500 font-mono">Slide {activeSlide.id + 1} of {slides.length}</div>
               </div>
@@ -504,6 +543,38 @@ export default function Home() {
         </div>
       </footer>
 
+      {/* Exporting Overlay */}
+      <AnimatePresence>
+        {isExporting && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black/80 backdrop-blur-md z-[100] flex flex-col items-center justify-center p-6"
+          >
+            <div className="bg-[#12151B] border border-[#2D3139] p-8 rounded-2xl shadow-2xl flex flex-col items-center max-w-sm w-full text-center">
+               <Video className="w-12 h-12 text-blue-500 mb-6 animate-pulse" />
+               <h3 className="text-lg font-bold text-white mb-2">Exporting Video</h3>
+               <p className="text-sm text-slate-400 mb-6">
+                 We are rendering your presentation to a high-quality WebM video. Please keep this tab open and your audio plays normally.
+               </p>
+               
+               <div className="w-full bg-[#0A0C10] rounded-full h-3 mb-2 border border-[#2D3139] overflow-hidden">
+                 <motion.div 
+                   className="bg-blue-500 h-full rounded-full"
+                   initial={{ width: "0%" }}
+                   animate={{ width: `${Math.round(exportProgress * 100)}%` }}
+                   transition={{ ease: "linear", duration: 0.2 }}
+                 />
+               </div>
+               <span className="text-xs font-mono font-bold text-blue-400">
+                 {Math.round(exportProgress * 100)}%
+               </span>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* API Key Modal */}
       {isApiKeyModalOpen && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
@@ -527,7 +598,7 @@ export default function Home() {
             
             <div className="p-4 flex-1 overflow-y-auto max-h-[60vh]">
               <p className="text-xs text-slate-400 mb-4 leading-relaxed">
-                Add your personal Gemini API keys. Keys will be stored securely in your browser's local storage and used to run the generation.
+                Add your personal Gemini API keys. Keys will be stored securely in your browser&apos;s local storage and used to run the generation.
               </p>
 
               {/* add form */}
