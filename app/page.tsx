@@ -6,7 +6,7 @@ import { determinePersonas, generateSlideScript, generateSpeech, PersonasResult,
 import { pcmBase64ToWavUrl, mergePcmBase64ToWavUrl } from '@/lib/audio-utils';
 import { UploadCloud, Play, Settings2, FileText, CheckCircle2, Loader2, BookOpen, MousePointer2, Key, Plus, Trash2, X, Download, Video } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { exportToVideo, SegmentTiming } from '@/lib/video-export';
+import { exportAllToVideo, SegmentTiming } from '@/lib/video-export';
 
 type SlideState = 'PENDING' | 'GENERATING_SCRIPT' | 'GENERATING_AUDIO' | 'DONE' | 'ERROR';
 
@@ -99,24 +99,28 @@ export default function Home() {
   };
   
   const handleExportVideo = async () => {
-    const activeSlide = slides.find(s => s.id === activeSlideId);
-    if (!activeSlide || !activeSlide.imgBase64 || !activeSlide.audioUrl || !activeSlide.timings) return;
+    const validSlides = slides.filter(s => s.imgBase64 && s.audioUrl && s.timings);
+    if (validSlides.length === 0) return;
     
     setIsExporting(true);
     setExportProgress(0);
     
     try {
-      const { url: videoUrl, mimeType } = await exportToVideo(
-        `data:image/jpeg;base64,${activeSlide.imgBase64}`,
-        activeSlide.audioUrl,
-        activeSlide.timings.map(t => ({...t, startTime: t.startTime / 1000, endTime: t.endTime / 1000})),
+      const slideData = validSlides.map(s => ({
+        imageSrc: `data:image/jpeg;base64,${s.imgBase64}`,
+        audioUrl: s.audioUrl!,
+        timing: s.timings!.map(t => ({...t, startTime: t.startTime / 1000, endTime: t.endTime / 1000}))
+      }));
+
+      const { url: videoUrl, mimeType } = await exportAllToVideo(
+        slideData,
         (progress) => setExportProgress(progress)
       );
       
       const fileExtension = mimeType.includes('mp4') ? 'mp4' : 'webm';
       const a = document.createElement('a');
       a.href = videoUrl;
-      a.download = `slide_${activeSlide.id + 1}_export.${fileExtension}`;
+      a.download = `full_presentation_export.${fileExtension}`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
@@ -387,14 +391,14 @@ export default function Home() {
                 <div className="flex gap-4 items-center">
                   <div className="px-3 py-1.5 bg-blue-600/10 border border-blue-500/50 text-blue-400 text-[10px] uppercase font-bold tracking-wider rounded">Slide View</div>
                   
-                  {activeSlide.audioUrl && activeSlide.timings && (
+                  {slides.some(s => s.audioUrl && s.timings) && (
                     <button
                       onClick={handleExportVideo}
                       disabled={isExporting}
                       className="px-3 py-1.5 border border-slate-600 rounded text-xs font-medium text-slate-300 hover:text-white hover:bg-slate-800 transition-colors flex items-center gap-2 group disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       {isExporting ? <Loader2 className="w-3 h-3 animate-spin"/> : <Download className="w-3 h-3 group-hover:text-blue-400"/>}
-                      {isExporting ? 'Exporting...' : 'Export Video'}
+                      {isExporting ? 'Exporting...' : 'Export Full Video'}
                     </button>
                   )}
                 </div>

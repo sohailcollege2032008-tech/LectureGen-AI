@@ -56,7 +56,8 @@ export async function determinePersonas(pageImagesBase64: string[], userInstruct
 
   let prompt = `Analyze these sample pages from a presentation/document.
 You need to determine the best persona and voice to teach this material effectively in a non-robotic, engaging way.
-CRITICAL: The spoken language for this lecture will be Egyptian Arabic (العامية المصرية), but technical terms must remain in English.
+CRITICAL: The spoken language for this lecture will primarily be Egyptian Arabic (العامية المصرية), guided by an Egyptian Doctor/Professor persona.
+NEVER translate terminology: If an equation, concept, or term is written in Arabic, it must be referred to in Arabic. If it is written in English (e.g., Mathematics, Anatomy), it must be spoken in English exactly as it appears.
 `;
 
   if (userInstructions && userInstructions.trim() !== '') {
@@ -148,12 +149,15 @@ CRITICAL INSTRUCTIONS:
       systemInstruction += `  - Slide ${idx + 1}: ${summary}\n`;
     });
     systemInstruction += `Make sure to seamlessly transition and connect the ideas from the previous slides to this one.\n`;
+    systemInstruction += `- VERY IMPORTANT: Do NOT start this slide with a greeting like "أهلاً" or "تعالوا نبدأ". This is a continuation of the same video. Jump straight into the next point or say something like "ودلوقتي نيجي للنقطة اللي بعدها..."\n`;
   } else {
     systemInstruction += `- This is the FIRST slide. Start the lecture with a welcoming introduction before explaining the slide.\n`;
   }
 
   systemInstruction += `
-- The output script MUST be in Egyptian Arabic (العامية المصرية), but keep technical and scientific terms in English.
+- Adopt the persona of an **Egyptian University Doctor/Professor** explaining to their students. Use a confident, knowledgeable, yet accessible Egyptian colloquial accent (العامية المصرية).
+- Use natural Egyptian medical community phrases, like "يا دكاترة", "خدوا بالكم من دي", "مهم أوي نركز هنا". Write phonetically if needed so the TTS engine pronounces it perfectly in an Egyptian accent.
+- **CRITICAL LANGUAGE RULE**: Never translate terms. If a concept, equation, or phrase is written in Arabic (e.g., "التفاضل والتكامل"), you MUST say it in Arabic. If it is written in English (e.g., "Calculus", "Anatomy"), you MUST say it in English exactly as it appears. 
 - Do NOT just read the text literally. Use a conversational, teaching tone.
 - Act like you are presenting this slide visually to your students. Feel free to say things like "زي ما إحنا شايفين في الصورة دي..." or "ركزوا معايا في الجزء ده...".
 - The script should be engaging, natural, and feel like a real human explaining the concept.
@@ -164,10 +168,11 @@ CRITICAL INSTRUCTIONS:
   if (enableAnnotations) {
     systemInstruction += `
 - VISUAL ANNOTATIONS: Break your explanation into small logical segments. For each segment, output it in the 'segments' array.
-- If you are referring to a visual element on the slide, provide its bounding box in 'box_2d' as [ymin, xmin, ymax, xmax] scaled 0 to 1000. For example, [100, 200, 300, 400] means ymin 10%, xmin 20%, ymax 30%, xmax 40%.
+- If you are referring to a visual element on the slide, provide its bounding box in 'box_2d' as [ymin, xmin, ymax, xmax] scaled 0 to 1000.
 - CRITICAL ACCURACY: The 'box_2d' coordinates MUST tightly wrap the exact element, text, or figure you are referring to. Do not draw boxes too large. Pay careful attention to the visual spacing.
-- Choose 'annotationType' carefully based on what you are doing in that segment:
-   * 'highlight': Use for blocks of text or important paragraphs to draw attention to the background.
+- Choose 'annotationType' carefully based on what you are doing in that segment.
+- EXTREMELY IMPORTANT: Do NOT lazily use 'highlight' for everything. You MUST mix and use a rich variety of 'circle', 'arrow', and 'underline'. 
+   * 'highlight': Use for large blocks of text or important paragraphs to draw attention to the background. 
    * 'underline': Use for specific key phrases, important terms, or titles to underline them.
    * 'circle': Use for diagrams, numbers, or specific disconnected elements that need a clean enclosed circle.
    * 'arrow': Use to draw a pointing arrow towards a specific visual element, logo, or part of a chart.
